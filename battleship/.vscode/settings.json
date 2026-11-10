@@ -1,0 +1,11 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.compile.nullAnalysis.mode": "disabled",
+  "java.import.maven.enabled": true,
+  "maven.executable.preferMavenWrapper": true,
+  "files.exclude": {
+    "**/target": true
+  },
+  "files.eol": "\n",
+  "editor.insertSpaces": true
+}

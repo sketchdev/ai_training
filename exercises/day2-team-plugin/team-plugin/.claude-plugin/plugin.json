@@ -1,0 +1,6 @@
+{
+  "name": "team-plugin",
+  "version": "0.0.1",
+  "description": "Shared skills, subagents, and hooks for the team",
+  "author": { "name": "Fed development team" }
+}

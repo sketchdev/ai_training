@@ -1,0 +1,11 @@
+{
+  "name": "fed-team-marketplace",
+  "owner": { "name": "Fed development team" },
+  "plugins": [
+    {
+      "name": "team-plugin",
+      "source": "./team-plugin",
+      "description": "Shared skills, subagents, and hooks for the Battleship lab team"
+    }
+  ]
+}

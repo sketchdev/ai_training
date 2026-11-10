@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./mvnw verify)",
+      "Bash(mvn verify)",
+      "Bash(git status)",
+      "Bash(git diff *)"
+    ],
+    "ask": [
+      "Bash(git push *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(curl *)",
+      "Bash(wget *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/block-protected-paths.sh" }]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/block-dangerous-bash.sh" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/require-tests-pass.sh" }]
+      }
+    ]
+  }
+}

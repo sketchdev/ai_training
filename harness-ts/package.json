@@ -1,0 +1,23 @@
+{
+  "name": "harness-ts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript Agent SDK starter kit for the Claude Code training, Lab 2",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "run-story": "tsx src/orchestrator.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "yaml": "^2.5.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Battleship</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Battleship</h1>
+  <div class="controls">
+    <button id="new-game">New game</button>
+    <button id="place-random" disabled>Place my fleet randomly</button>
+    <span id="message">Click "New game" to start.</span>
+  </div>
+  <div class="boards">
+    <div>
+      <h2>Your fleet</h2>
+      <table id="your-board" class="board"></table>
+    </div>
+    <div>
+      <h2>Enemy waters (click to fire)</h2>
+      <table id="enemy-board" class="board"></table>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

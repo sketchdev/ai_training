@@ -1,0 +1,11 @@
+body { font-family: sans-serif; margin: 2rem; }
+.controls { margin-bottom: 1rem; }
+.controls button { margin-right: 0.5rem; }
+.boards { display: flex; gap: 3rem; }
+.board { border-collapse: collapse; }
+.board td { width: 32px; height: 32px; border: 1px solid #889; text-align: center; background: #cfe8ff; }
+#enemy-board td.open { cursor: pointer; }
+#enemy-board td.open:hover { background: #a8d0f5; }
+.board td.ship { background: #7a8794; }
+.board td.miss { background: #fff; }
+.board td.hit { background: #e04b4b; color: #fff; }

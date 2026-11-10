@@ -1,0 +1,40 @@
+name: story-to-pr
+trigger: ticket labeled "ready-for-claude"
+
+# Paths the agent may never edit. The guardrail hook enforces this.
+protected_paths:
+  - pom.xml
+  - .github/
+  - .env
+
+limits:
+  max_turns: 40
+  max_budget_usd: 5
+
+stages:
+  - name: plan
+    description: Read the story and the code. Produce a plan. Change nothing.
+    allowed_tools: [Read, Grep, Glob]
+    prompt: |
+      Read the story below and the repository. Produce a plan: files to change,
+      tests to add, and risks. Do not edit any file.
+    check: plan lists at least one file and one test
+
+  - name: implement
+    description: Make the change and its tests on a branch.
+    allowed_tools: [Read, Grep, Glob, Edit, Write, "Bash(mvn *)", "Bash(./mvnw *)", "Bash(git *)"]
+    prompt: |
+      Implement the plan. Write the tests first. Run `./mvnw verify` until it passes.
+    check: ./mvnw verify passes
+
+  - name: review
+    # Each stage is its own query() call, so review always starts in a fresh session.
+    description: Review the diff in a fresh session.
+    # Skill lets this stage run /team-plugin:review after you load the plugin (lab step 2).
+    allowed_tools: [Read, Grep, Glob, Skill, "Bash(git diff *)"]
+    prompt: |
+      Review the diff on this branch against docs/standards.md.
+      Report each violation. Do not edit files.
+    check: verdict is approve or request_changes
+
+human: approves the draft PR before merge

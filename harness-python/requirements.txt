@@ -1,0 +1,3 @@
+claude-agent-sdk
+pydantic>=2
+pyyaml

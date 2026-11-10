@@ -1,0 +1,18 @@
+target/
+*.iml
+.DS_Store
+
+# IntelliJ: share run configurations only
+.idea/*
+!.idea/runConfigurations/
+!.idea/.gitignore
+
+# VS Code: share project settings only
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+
+# Claude Code: personal settings stay local
+.claude/settings.local.json

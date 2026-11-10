@@ -1,0 +1,6 @@
+{
+  "files.exclude": { "**/node_modules": true },
+  "files.eol": "\n",
+  "editor.insertSpaces": true,
+  "typescript.tsdk": "node_modules/typescript/lib"
+}
