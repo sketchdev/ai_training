@@ -16,7 +16,6 @@ Start every Claude Code session inside a practice repository, not in this folder
 
 | Folder | Used on | What it is |
 |---|---|---|
-| `exercises/day1-demos/` | Day 1, facilitator | A local deny rule for the slide 22 demo |
 | `exercises/lab1-story-to-pr/` | Day 1, Lab 1 | Tickets, a spec template, and the lab steps |
 | `exercises/day2-team-plugin/` | Day 2, build sprint | A starter skeleton for the team plugin |
 | `exercises/day3-guardrails/` | Day 3, ship sprint | Hook scripts, a permissions file, and a review checklist |
@@ -26,4 +25,3 @@ Start every Claude Code session inside a practice repository, not in this folder
 
 The `.gitignore` in this folder lists the practice repositories, so they are not part of this repository's history. Clone each one into this folder, or create it here. See the `README.md` in each practice repository for its own setup.
 
-If you run the course, read `FACILITATOR.md`.

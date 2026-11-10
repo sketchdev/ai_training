@@ -100,7 +100,7 @@ Status: applied. Decisions: the repository hooks now read their input with `jq`,
 
 ### 2.3 Low priority: Day 1 demo prompts that do not fit the lab repository
 
-Status: applied, with two changes to the suggestions. Battleship already rejects a repeat shot (`Board.fire`) and shots outside the board, so neither suggested example was a real gap. Slide 33 now uses ticket LAB-03 (the computer fires at random after a hit), and slide 22 plans ticket LAB-02 (`DELETE /api/games/{id}`). The slide 22 notes tell the facilitator to add a deny rule for `git push` before the demo, because the Day 3 settings example uses `ask` for it. Nobody has viewed the slides in PowerPoint yet.
+Status: applied, with two changes to the suggestions. Battleship already rejects a repeat shot (`Board.fire`) and shots outside the board, so neither suggested example was a real gap. Slide 33 now uses ticket LAB-03 (the computer fires at random after a hit), and slide 22 plans ticket LAB-02 (`DELETE /api/games/{id}`). Nobody has viewed the slides in PowerPoint yet.
 
 | Slide | Deck says | Battleship reality | Suggested change |
 |---|---|---|---|

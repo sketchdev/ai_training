@@ -152,23 +152,6 @@ Starting point: the **harness starter kit** repo (see prep checklist), with plug
 
 ---
 
-## Facilitator prep checklist (open items)
-
-- [ ] Confirm the four dates with Adrienne.
-- [ ] Get Q's photo and two bio lines for the facilitator slide.
-- [ ] Confirm which surfaces the Fed can use: the desktop app, browser/cloud sessions and routines (`/schedule`, which depends on plan and sign-in).
-- [ ] Confirm the auto-mode default and the security office's data and provider position (the slides show "to confirm").
-- [ ] Settle the lab repo. Every attendee must be able to open a branch, it needs tests that run in CI, and it may or may not be a real team repo.
-- [ ] Set up a ticket board with small, realistic tickets for Lab 1 (Trello or the team's own tracker).
-- [ ] Choose a demo repo for `/init` and dry-run every demo.
-- [ ] Bring sticky notes and a board (physical or virtual) for the Day 1 workshop.
-- [ ] Before Day 2, fill in the parking-lot answers slide.
-- [ ] Prepare a fallback backlog item for the Day 2 skill demo.
-- [x] Build the **harness starter kit** for Day 4: an orchestrator, one `query()` per stage, a guardrails module, Pydantic schemas, a sample workflow YAML, three practice stories and a `runs/` folder.
-- [ ] Arrange Agent SDK credentials and an approved sandbox for Day 4.
-
----
-
 ## Appendix: V1 deck comments and how V2 handles them
 
 | V1 slide | Comment | V2 change |
