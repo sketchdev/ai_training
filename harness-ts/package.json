@@ -8,7 +8,8 @@
   "scripts": {
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "run-story": "tsx src/orchestrator.ts"
+    "run-story": "tsx src/orchestrator.ts",
+    "hub": "tsx src/hub.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "latest",

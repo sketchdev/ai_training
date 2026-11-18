@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchestrator</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dd;
+    --accent: #2f5fd0; --wait: #b25e00; --wait-bg: #fff3e0; --pass: #1f7a3a; --fail: #b3261e; --lost: #7a7a7a;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --panel: #1f1f1d; --text: #ececea; --muted: #9a9a94; --line: #33332f;
+      --accent: #7ea2ff; --wait: #ffb460; --wait-bg: #3a2a14; --pass: #6fcf8a; --fail: #ff8a80; --lost: #9a9a94;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; }
+  header h1 { font-size: 16px; margin: 0; }
+  #connection { color: var(--muted); font-size: 12px; }
+  main { flex: 1; display: grid; grid-template-columns: 320px 1fr; min-height: 0; }
+  #runs { border-right: 1px solid var(--line); overflow-y: auto; }
+  #runs .empty { padding: 16px; color: var(--muted); }
+  .run { padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .run:hover { background: var(--panel); }
+  .run.selected { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
+  .run.waiting { background: var(--wait-bg); }
+  .run .top { display: flex; justify-content: space-between; gap: 8px; }
+  .run .story { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run .meta { color: var(--muted); font-size: 12px; }
+  .badge { font-size: 11px; padding: 1px 7px; border-radius: 9px; border: 1px solid currentColor; white-space: nowrap; }
+  .s-running { color: var(--accent); } .s-waiting { color: var(--wait); } .s-passed { color: var(--pass); }
+  .s-failed { color: var(--fail); } .s-lost, .s-pending { color: var(--lost); }
+  #detail { display: flex; flex-direction: column; min-height: 0; }
+  #detail .empty { padding: 24px; color: var(--muted); }
+  .head { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .head .title { font-size: 16px; font-weight: 600; display: flex; gap: 10px; align-items: center; }
+  .head .path { font: 12px var(--mono); color: var(--muted); margin-top: 2px; }
+  .stages { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .stage { border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; background: var(--panel); font-size: 12px; }
+  .stage b { display: block; font-size: 13px; }
+  .stage.running { border-color: var(--accent); } .stage.waiting { border-color: var(--wait); }
+  .stage.passed { border-color: var(--pass); } .stage.failed { border-color: var(--fail); }
+  #transcript { flex: 1; overflow-y: auto; padding: 10px 16px; }
+  .entry { margin: 4px 0; white-space: pre-wrap; word-break: break-word; }
+  .entry .who { font-size: 11px; color: var(--muted); margin-right: 6px; text-transform: uppercase; }
+  .entry.assistant { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  .entry.tool { font: 12px var(--mono); color: var(--muted); }
+  .entry.user { border-left: 3px solid var(--accent); padding-left: 8px; }
+  .entry.note { font-size: 12px; color: var(--muted); }
+  .entry.result { font-size: 12px; color: var(--pass); }
+  #pending { border-top: 1px solid var(--line); background: var(--wait-bg); max-height: 50vh; overflow-y: auto; }
+  #pending:empty { display: none; }
+  .request { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .request h3 { margin: 0 0 6px; font-size: 13px; color: var(--wait); }
+  .request pre { font: 12px var(--mono); background: var(--panel); border: 1px solid var(--line); padding: 8px; border-radius: 6px; white-space: pre-wrap; max-height: 200px; overflow: auto; margin: 6px 0; }
+  .question { margin: 8px 0; }
+  .question .q { font-weight: 600; }
+  .question label { display: block; margin: 3px 0; }
+  .question label small { color: var(--muted); }
+  .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  textarea, input[type=text] { width: 100%; font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); }
+  button { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--fail); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #composer { border-top: 1px solid var(--line); padding: 10px 16px; display: flex; gap: 8px; align-items: flex-end; }
+  #composer textarea { flex: 1; resize: vertical; min-height: 38px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Orchestrator</h1>
+  <span id="connection">Connecting…</span>
+</header>
+<main>
+  <section id="runs"><div class="empty">No runs yet. Start one with --dashboard.</div></section>
+  <section id="detail"><div class="empty">Select a run.</div></section>
+</main>
+<script>
+"use strict";
+
+const runs = new Map();       // id -> { run, events }
+let selected = location.hash.slice(1) || null;
+let renderedPending = "";     // pending ids shown, so typed text survives updates
+const waitingBefore = new Set();
+
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
+    else if (value === true) el.setAttribute(key, "");
+    else if (value !== false && value != null) el.setAttribute(key, value);
+  }
+  for (const child of children.flat()) {
+    if (child == null || child === false) continue;
+    el.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return el;
+}
+
+async function post(path, body) {
+  const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) alert(`The hub refused: ${res.status} ${await res.text()}`);
+  return res.ok;
+}
+
+const answer = (runId, requestId, response) => post(`/api/runs/${runId}/answer`, { requestId, response });
+
+function currentStage(run) {
+  return run.stages.find((s) => s.status === "running" || s.status === "waiting")
+    ?? [...run.stages].reverse().find((s) => s.status !== "pending") ?? run.stages[0];
+}
+
+function totalCost(run) {
+  return run.stages.reduce((sum, s) => sum + (s.cost || 0), 0);
+}
+
+function sortedRuns() {
+  const rank = { waiting: 0, running: 1, lost: 2, failed: 3, passed: 4 };
+  return [...runs.values()].map((r) => r.run)
+    .sort((a, b) => (rank[a.status] - rank[b.status]) || (b.started - a.started));
+}
+
+function renderList() {
+  const list = document.getElementById("runs");
+  const all = sortedRuns();
+  list.replaceChildren(...(all.length ? all.map((run) => {
+    const stage = currentStage(run);
+    return h("div", {
+      class: `run ${run.status === "waiting" ? "waiting" : ""} ${run.id === selected ? "selected" : ""}`,
+      onclick: () => select(run.id),
+    },
+      h("div", { class: "top" },
+        h("span", { class: "story" }, run.story),
+        h("span", { class: `badge s-${run.status}` }, run.pending.length ? `needs input (${run.pending.length})` : run.status)),
+      h("div", { class: "meta" },
+        `${run.harness} · ${stage ? stage.name : "-"} · $${totalCost(run).toFixed(2)} · ${run.id}`));
+  }) : [h("div", { class: "empty" }, "No runs yet. Start one with --dashboard.")]));
+
+  const waiting = all.filter((r) => r.status === "waiting").length;
+  document.title = waiting ? `(${waiting}) Orchestrator` : "Orchestrator";
+}
+
+function entryNode({ event, at }) {
+  const time = new Date(at).toLocaleTimeString();
+  switch (event.type) {
+    case "message":
+      return h("div", { class: `entry ${event.role}`, title: `${time} · ${event.stage}` },
+        h("span", { class: "who" }, event.role === "user" ? "you" : event.role), event.text);
+    case "stage":
+      return h("div", { class: "entry note" },
+        `${time} · ${event.stage}: ${event.status}${event.attempt ? `, attempt ${event.attempt}` : ""}${event.reason ? ` (${event.reason})` : ""}`);
+    case "pending":
+      return h("div", { class: "entry note" }, `${time} · waiting for a person: ${event.request.kind}`);
+    case "resolved":
+      return h("div", { class: "entry note" }, `${time} · answered: ${JSON.stringify(event.response ?? "cancelled")}`);
+    case "end":
+      return h("div", { class: `entry note s-${event.status}` }, `${time} · run ${event.status}: ${event.reason ?? ""}`);
+    case "lost":
+      return h("div", { class: "entry note s-lost" }, `${time} · the run stopped talking to the hub`);
+    default:
+      return null;
+  }
+}
+
+function stageBar(run) {
+  return h("div", { class: "stages" }, run.stages.map((s) =>
+    h("div", { class: `stage ${s.status}` },
+      h("b", {}, s.name),
+      `${s.status}${s.attempt ? ` · try ${s.attempt}` : ""} · ${s.turns} turns · $${(s.cost || 0).toFixed(2)}`)));
+}
+
+function questionForm(run, request) {
+  const questions = request.payload.questions || [];
+  const fields = questions.map((q, i) => {
+    const name = `${request.id}-${i}`;
+    const type = q.multiSelect ? "checkbox" : "radio";
+    return h("div", { class: "question" },
+      h("div", { class: "q" }, `${q.header ? `[${q.header}] ` : ""}${q.question}`),
+      (q.options || []).map((o) => h("label", {},
+        h("input", { type, name, value: o.label }), " ", o.label, o.description ? h("small", {}, ` · ${o.description}`) : null)),
+      h("input", { type: "text", name: `${name}-other`, placeholder: "Other (replaces the choice above)" }));
+  });
+  const form = h("form", {
+    onsubmit: (e) => {
+      e.preventDefault();
+      const answers = {};
+      questions.forEach((q, i) => {
+        const name = `${request.id}-${i}`;
+        const other = form.querySelector(`[name="${name}-other"]`).value.trim();
+        const picked = [...form.querySelectorAll(`[name="${name}"]:checked`)].map((el) => el.value);
+        answers[q.question] = other || picked.join(", ");
+      });
+      if (Object.values(answers).some((a) => !a)) return alert("Answer each question, or press Skip.");
+      answer(run.id, request.id, { answers });
+    },
+  }, fields, h("div", { class: "actions" },
+    h("button", { class: "primary", type: "submit" }, "Answer"),
+    h("button", { type: "button", onclick: () => answer(run.id, request.id, { skip: true }) }, "Skip")));
+  return form;
+}
+
+function permissionForm(run, request) {
+  const note = h("input", { type: "text", placeholder: "Note for the model (optional)" });
+  return h("div", {},
+    h("div", {}, "The model wants to use ", h("b", {}, request.payload.tool), ", which this stage does not allow."),
+    h("pre", {}, JSON.stringify(request.payload.input, null, 2)),
+    note,
+    h("div", { class: "actions" },
+      h("button", { class: "primary", onclick: () => answer(run.id, request.id, { allow: true }) }, "Allow once"),
+      h("button", { class: "danger", onclick: () => answer(run.id, request.id, { allow: false, note: note.value.trim() || undefined }) }, "Deny")));
+}
+
+function replyForm(run, request) {
+  const text = h("textarea", { rows: 3, placeholder: "Reply to the model" });
+  return h("div", {},
+    h("div", {}, request.payload.reason),
+    request.payload.lastText ? h("pre", {}, request.payload.lastText) : null,
+    text,
+    h("div", { class: "actions" },
+      h("button", { class: "primary", onclick: () => text.value.trim() ? answer(run.id, request.id, { action: "reply", text: text.value.trim() }) : alert("Write a reply first.") }, "Reply"),
+      h("button", { onclick: () => answer(run.id, request.id, { action: "retry" }) }, "Retry fresh"),
+      h("button", { class: "danger", onclick: () => confirm("Stop this run?") && answer(run.id, request.id, { action: "stop" }) }, "Stop")));
+}
+
+function renderPending(run) {
+  const key = run.pending.map((p) => p.id).join(",");
+  if (key === renderedPending) return;
+  renderedPending = key;
+  const titles = { question: "The model asks", permission: "Permission needed", reply: "The model stopped" };
+  const forms = { question: questionForm, permission: permissionForm, reply: replyForm };
+  document.getElementById("pending").replaceChildren(...run.pending.map((p) =>
+    h("div", { class: "request" }, h("h3", {}, `${titles[p.kind]}${p.stage ? ` · ${p.stage}` : ""}`), forms[p.kind](run, p))));
+}
+
+function renderDetail() {
+  const detail = document.getElementById("detail");
+  const entry = runs.get(selected);
+  renderedPending = null;
+  if (!entry) return detail.replaceChildren(h("div", { class: "empty" }, "Select a run."));
+  const { run, events } = entry;
+  const message = h("textarea", { id: "message", rows: 1, placeholder: "Message the model. If it is waiting for a reply, this answers it." });
+  const sendMessage = () => {
+    const text = message.value.trim();
+    if (!text) return;
+    const current = runs.get(selected).run;
+    const reply = current.pending.find((p) => p.kind === "reply");
+    const sent = reply
+      ? answer(current.id, reply.id, { action: "reply", text })
+      : post(`/api/runs/${current.id}/message`, { text, stage: currentStage(current)?.name });
+    sent.then((ok) => ok && (message.value = ""));
+  };
+  message.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendMessage(); });
+  const live = run.status === "running" || run.status === "waiting";
+
+  detail.replaceChildren(
+    h("div", { class: "head", id: "head" }),
+    h("div", { id: "transcript" }, events.map(entryNode)),
+    h("div", { id: "pending" }),
+    h("div", { id: "composer" }, message,
+      h("button", { class: "primary", onclick: sendMessage, disabled: !live }, "Send"),
+      h("button", { class: "danger", disabled: !live, onclick: () => post(`/api/runs/${run.id}/interrupt`, {}) }, "Interrupt")));
+  renderHead(run);
+  renderPending(run);
+  const transcript = document.getElementById("transcript");
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
+function renderHead(run) {
+  document.getElementById("head").replaceChildren(
+    h("div", { class: "title" }, run.story, h("span", { class: `badge s-${run.status}` }, run.status)),
+    h("div", { class: "path" }, `${run.id} · ${run.harness} · ${run.workflow} · ${run.repo}`),
+    stageBar(run));
+}
+
+function select(id) {
+  selected = id;
+  history.replaceState(null, "", `#${id}`);
+  renderList();
+  renderDetail();
+}
+
+function notifyWaiting(run) {
+  const waiting = run.status === "waiting";
+  if (waiting && !waitingBefore.has(run.id) && document.hidden && Notification.permission === "granted") {
+    new Notification(`${run.story} needs input`, { body: run.pending[0]?.kind ?? "" }).onclick = () => { window.focus(); select(run.id); };
+  }
+  if (waiting) waitingBefore.add(run.id); else waitingBefore.delete(run.id);
+}
+
+function onUpdate({ run, entry }) {
+  const known = runs.get(run.id) ?? { run, events: [] };
+  known.run = run;
+  if (entry) known.events.push(entry);
+  runs.set(run.id, known);
+  notifyWaiting(run);
+  renderList();
+  if (run.id !== selected) return;
+  if (!document.getElementById("transcript")) return renderDetail();
+  renderHead(run);
+  renderPending(run);
+  const node = entry && entryNode(entry);
+  if (node) {
+    const transcript = document.getElementById("transcript");
+    const atBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 40;
+    transcript.append(node);
+    if (atBottom) transcript.scrollTop = transcript.scrollHeight;
+  }
+  const live = run.status === "running" || run.status === "waiting";
+  document.querySelectorAll("#composer button").forEach((b) => (b.disabled = !live));
+}
+
+function connect() {
+  const stream = new EventSource("/api/stream");
+  const status = document.getElementById("connection");
+  stream.onopen = () => (status.textContent = "Connected to the hub");
+  stream.onerror = () => (status.textContent = "Disconnected. Reconnecting…");
+  stream.onmessage = (e) => {
+    const message = JSON.parse(e.data);
+    if (message.type === "snapshot") {
+      runs.clear();
+      for (const r of message.runs) { runs.set(r.run.id, r); notifyWaiting(r.run); }
+      if (!selected || !runs.has(selected)) selected = sortedRuns()[0]?.id ?? null;
+      renderList();
+      renderDetail();
+    } else if (message.type === "update") {
+      onUpdate(message);
+    }
+  };
+}
+
+document.addEventListener("click", () => {
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+}, { once: true });
+connect();
+</script>
+</body>
+</html>

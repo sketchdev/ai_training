@@ -29,6 +29,29 @@ python -m harness.orchestrator workflows/story-to-pr.yaml stories/story-1-list-g
 
 The `--repo` path points to the sibling `battleship` repository. Results go to `runs/`: one transcript per stage and one `metrics.csv`.
 
+## Watch and drive runs from the dashboard
+
+The dashboard is a web page that shows every run that uses `--dashboard`. A person can read the live transcript, answer the model's questions, allow a tool that the stage does not allow, send a message, and interrupt.
+
+1. Start the hub once. The hub is part of `harness-ts`, so you need Node.js 20 or later and `npm install` there. Python runs need Python 3.10 or later.
+
+   ```bash
+   cd harness-ts && npm run hub
+   ```
+
+2. Open `http://127.0.0.1:4321`.
+3. Start one or more runs with `--dashboard`:
+
+   ```bash
+   python -m harness.orchestrator workflows/story-to-pr.yaml stories/story-1-list-games.md --repo ../battleship --dashboard
+   ```
+
+Each run with `--dashboard` works in its own git worktree at `runs/<run id>/repo`, on the branch `story/<story>-<run id>`. Files that are not committed are not in the worktree. Commit them first, or the orchestrator prints a warning. To remove a worktree, run `git worktree remove runs/<run id>/repo`.
+
+If the hub is not running, a run with `--dashboard` stops before its first stage. Runs without `--dashboard` work as before and ask no one.
+
+The hub listens on `127.0.0.1` only. Anyone who can open the page can allow tool calls.
+
 ## Lab steps (70 minutes)
 
 1. Run the starter on one story. Read the result: subtype, turns, cost, session ID.

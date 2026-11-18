@@ -30,7 +30,7 @@ stages:
   - name: review
     # Each stage is its own query() call, so review always starts in a fresh session.
     description: Review the diff in a fresh session.
-    # Skill lets this stage run /team-plugin:review after you load the plugin (lab step 2).
+    # Skill lets this stage run skills from the core plugin, which the orchestrator loads.
     allowed_tools: [Read, Grep, Glob, Skill, "Bash(git diff *)"]
     prompt: |
       Review the diff on this branch against docs/standards.md.
