@@ -17,7 +17,9 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import type { RunEvent, RunInfo, RunInput, RunState } from "./hubTypes.ts";
+import type { LaunchRequest, RunEvent, RunInfo, RunInput, RunState } from "./hubTypes.ts";
+import { harnessDirs, Launcher } from "./launcher.ts";
+import { MODE_HELP, RUN_MODES } from "./permissions.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = resolve(HERE, "..", "..", "dashboard", "index.html");
@@ -25,12 +27,19 @@ const LOG_DIR = resolve(HERE, "..", "runs", "hub");
 
 /** A run that sends nothing for this long, with no open inbox, is marked lost. */
 export const LOST_AFTER_MS = 60_000;
+/**
+ * A launched run that has not connected yet gets longer, because a first start can be slow
+ * (tsx, Python imports). While the hub runs, the launcher sees a process that exits early.
+ */
+export const STARTING_LOST_AFTER_MS = 10 * 60_000;
 /** The snapshot sends at most this many transcript entries per run. */
 const SNAPSHOT_EVENTS = 300;
 
 type StoredEvent =
   | RunEvent
   | { type: "register"; info: RunInfo; started: number }
+  | { type: "launch"; info: RunInfo; started: number; log: string }
+  | { type: "attach"; stages: string[] }
   | { type: "lost" };
 
 export interface LogEntry {
@@ -44,8 +53,9 @@ export type PageMessage =
   | { type: "update"; run: RunState; entry?: LogEntry };
 
 export function isLost(run: RunState, now: number, inboxConnected: boolean): boolean {
-  if (run.status !== "running" && run.status !== "waiting") return false;
-  return !inboxConnected && now - run.lastSeen > LOST_AFTER_MS;
+  if (run.status !== "running" && run.status !== "waiting" && run.status !== "starting") return false;
+  const limit = run.status === "starting" ? STARTING_LOST_AFTER_MS : LOST_AFTER_MS;
+  return !inboxConnected && now - run.lastSeen > limit;
 }
 
 export function newRunId(now = Date.now()): string {
@@ -64,22 +74,54 @@ export class Hub {
   constructor(private readonly persist: (entry: LogEntry) => void = () => {}) {}
 
   register(info: RunInfo, id = newRunId(), started = Date.now()): RunState {
-    const run: RunState = {
+    const run = this.newRun(info, id, started);
+    this.runs.set(id, run);
+    this.transcripts.set(id, []);
+    this.record({ runId: id, at: started, event: { type: "register", info, started } }, run);
+    return run;
+  }
+
+  /** A run that the hub launches. It shows as "starting" until its orchestrator connects. */
+  launchRun(info: RunInfo, log: string, id = newRunId(), started = Date.now()): RunState {
+    const run = this.newRun(info, id, started);
+    run.status = "starting";
+    run.launch = { log, attached: false };
+    this.runs.set(id, run);
+    this.transcripts.set(id, []);
+    this.record({ runId: id, at: started, event: { type: "launch", info, started, log } }, run);
+    return run;
+  }
+
+  /**
+   * The orchestrator of a launched run connects, and takes over the entry that the hub made.
+   * Returns false if there is no launched run with that id waiting to be taken over.
+   */
+  attach(runId: string, stages: string[], at = Date.now()): boolean {
+    const run = this.runs.get(runId);
+    if (!run?.launch || run.launch.attached || run.status === "passed" || run.status === "failed") return false;
+    run.launch.attached = true;
+    run.stages = stages.map((name) => run.stages.find((s) => s.name === name) ?? { name, status: "pending", attempt: 0, turns: 0, cost: 0 });
+    run.status = "running";
+    run.lastSeen = at;
+    this.refreshStatus(run);
+    this.record({ runId, at, event: { type: "attach", stages } }, run);
+    return true;
+  }
+
+  private newRun(info: RunInfo, id: string, started: number): RunState {
+    return {
       id,
       story: info.story,
       workflow: info.workflow,
       harness: info.harness,
       repo: info.repo,
+      permissionMode: info.permissionMode,
       status: "running",
       started,
       lastSeen: started,
       stages: info.stages.map((name) => ({ name, status: "pending", attempt: 0, turns: 0, cost: 0 })),
       pending: [],
     };
-    this.runs.set(id, run);
-    this.transcripts.set(id, []);
-    this.record({ runId: id, at: started, event: { type: "register", info, started } }, run);
-    return run;
   }
 
   /** Apply one event from an orchestrator. Returns false if the run is unknown. */
@@ -89,14 +131,18 @@ export class Hub {
     run.lastSeen = Math.max(run.lastSeen, at);
     switch (event.type) {
       case "stage": {
-        const stage = run.stages.find((s) => s.name === event.stage);
-        if (stage) {
-          stage.status = event.status;
-          if (event.attempt !== undefined) stage.attempt = event.attempt;
-          // Turns and cost are the stage's totals so far, not increments.
-          if (event.turns !== undefined) stage.turns = event.turns;
-          if (event.cost !== undefined) stage.cost = event.cost;
+        let stage = run.stages.find((s) => s.name === event.stage);
+        if (!stage) {
+          // A stage that the workflow file does not list, such as the built-in resolve stage.
+          stage = { name: event.stage, status: "pending", attempt: 0, turns: 0, cost: 0 };
+          const merge = run.stages.findIndex((s) => s.name === "merge");
+          run.stages.splice(merge >= 0 ? merge : run.stages.length, 0, stage);
         }
+        stage.status = event.status;
+        if (event.attempt !== undefined) stage.attempt = event.attempt;
+        // Turns and cost are the stage's totals so far, not increments.
+        if (event.turns !== undefined) stage.turns = event.turns;
+        if (event.cost !== undefined) stage.cost = event.cost;
         break;
       }
       case "pending":
@@ -200,6 +246,10 @@ export class Hub {
         const entry = JSON.parse(line) as LogEntry;
         if (entry.event.type === "register") {
           this.register(entry.event.info, entry.runId, entry.event.started);
+        } else if (entry.event.type === "launch") {
+          this.launchRun(entry.event.info, entry.event.log, entry.runId, entry.event.started);
+        } else if (entry.event.type === "attach") {
+          this.attach(entry.runId, entry.event.stages, entry.at);
         } else if (entry.event.type === "lost") {
           const run = this.runs.get(entry.runId);
           if (run) run.status = "lost";
@@ -214,6 +264,8 @@ export class Hub {
 
   private refreshStatus(run: RunState): void {
     if (run.status === "passed" || run.status === "failed") return;
+    // A launched run stays "starting" until its orchestrator connects.
+    if (run.launch && !run.launch.attached) return;
     run.status = run.pending.length > 0 ? "waiting" : "running";
   }
 
@@ -278,7 +330,7 @@ export function refuseReason(headers: IncomingMessage["headers"], method: string
   return null;
 }
 
-export function createHubServer(hub: Hub) {
+export function createHubServer(hub: Hub, launcher?: Launcher) {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://hub");
     const parts = url.pathname.split("/").filter(Boolean);
@@ -300,7 +352,21 @@ export function createHubServer(hub: Hub) {
       if (req.method === "POST" && url.pathname === "/api/runs") {
         const info = (await readJson(req)) as RunInfo;
         if (!info.story || !Array.isArray(info.stages)) return send(res, 400, { error: "story and stages are required" });
+        if (info.id) {
+          // A run that the hub launched takes over the entry made at launch.
+          if (!hub.attach(info.id, info.stages)) return send(res, 409, { error: `no launched run ${info.id} is waiting to start` });
+          return send(res, 201, { id: info.id });
+        }
         return send(res, 201, { id: hub.register(info).id });
+      }
+      if (req.method === "GET" && url.pathname === "/api/workflows") {
+        const modes = RUN_MODES.map((name) => ({ name, help: MODE_HELP[name] }));
+        return send(res, 200, { workflows: launcher?.workflows() ?? [], modes });
+      }
+      if (req.method === "POST" && url.pathname === "/api/launch") {
+        if (!launcher) return send(res, 404, { errors: ["this hub cannot launch runs"] });
+        const result = launcher.launch((await readJson(req)) as LaunchRequest);
+        return send(res, "id" in result ? 201 : 400, result);
       }
       if (parts[0] === "api" && parts[1] === "runs" && parts[2] && parts.length === 4) {
         const [, , runId, action] = parts;
@@ -354,7 +420,8 @@ function main(): void {
   setInterval(() => hub.sweep(), 10_000).unref();
 
   const port = Number(values.port);
-  createHubServer(hub).listen(port, "127.0.0.1", () => {
+  const launcher = new Launcher(hub, harnessDirs(resolve(HERE, "..")), `http://127.0.0.1:${port}`, LOG_DIR);
+  createHubServer(hub, launcher).listen(port, "127.0.0.1", () => {
     console.log(`Dashboard hub on http://127.0.0.1:${port} (${hub.runs.size} runs loaded from ${LOG_DIR})`);
   });
 }

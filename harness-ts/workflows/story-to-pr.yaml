@@ -1,6 +1,19 @@
 name: story-to-pr
 trigger: ticket labeled "ready-for-claude"
 
+# What the workflow needs to start. The dashboard builds its launch form from this, and the
+# orchestrator takes each one as --input name=value. Relative paths resolve against the
+# harness folder. "repo" is required: it is the repository that the run changes.
+inputs:
+  story:
+    kind: file
+    from: stories/*.md
+    description: The story to implement
+  repo:
+    kind: path
+    default: ../battleship
+    description: The repository to change
+
 # Paths the agent may never edit. The guardrail hook enforces this.
 protected_paths:
   - pom.xml
@@ -37,4 +50,4 @@ stages:
       Report each violation. Do not edit files.
     check: verdict is approve or request_changes
 
-human: approves the draft PR before merge
+human: approves the squash merge in the dashboard (runs with --dashboard)

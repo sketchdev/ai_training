@@ -33,7 +33,15 @@
   .run .meta { color: var(--muted); font-size: 12px; }
   .badge { font-size: 11px; padding: 1px 7px; border-radius: 9px; border: 1px solid currentColor; white-space: nowrap; }
   .s-running { color: var(--accent); } .s-waiting { color: var(--wait); } .s-passed { color: var(--pass); }
-  .s-failed { color: var(--fail); } .s-lost, .s-pending { color: var(--lost); }
+  .s-failed { color: var(--fail); } .s-lost, .s-pending { color: var(--lost); } .s-starting { color: var(--accent); }
+  header button { margin-left: auto; }
+  .launch { padding: 16px; overflow-y: auto; max-width: 720px; }
+  .launch h2 { font-size: 16px; margin: 0 0 12px; }
+  .launch .field { margin: 10px 0; }
+  .launch .field label { display: block; font-weight: 600; margin-bottom: 3px; }
+  .launch .field small { display: block; color: var(--muted); margin-bottom: 4px; }
+  .launch select { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); min-width: 260px; }
+  .launch .errors { color: var(--fail); margin: 8px 0; }
   #detail { display: flex; flex-direction: column; min-height: 0; }
   #detail .empty { padding: 24px; color: var(--muted); }
   .head { padding: 12px 16px; border-bottom: 1px solid var(--line); }
@@ -56,6 +64,17 @@
   #pending:empty { display: none; }
   .request { padding: 12px 16px; border-bottom: 1px solid var(--line); }
   .request h3 { margin: 0 0 6px; font-size: 13px; color: var(--wait); }
+  #pending.has-review { max-height: 75vh; }
+  .review .meta { color: var(--muted); font-size: 12px; margin: 4px 0; }
+  .review .error { color: var(--fail); font-weight: 600; margin: 6px 0; }
+  .review .note { border-left: 3px solid var(--accent); padding-left: 8px; margin: 6px 0; }
+  .review ul { margin: 4px 0 8px 18px; padding: 0; }
+  .review details { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; margin: 4px 0; }
+  .review summary { cursor: pointer; padding: 4px 8px; font: 12px var(--mono); }
+  .review summary .add { color: var(--pass); } .review summary .del { color: var(--fail); }
+  .review .patch { font: 12px var(--mono); white-space: pre; overflow-x: auto; padding: 4px 8px; border-top: 1px solid var(--line); max-height: 400px; overflow-y: auto; }
+  .review .patch .add { color: var(--pass); } .review .patch .del { color: var(--fail); } .review .patch .hunk { color: var(--accent); }
+  .review .fields { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; margin: 10px 0 4px; }
   .request pre { font: 12px var(--mono); background: var(--panel); border: 1px solid var(--line); padding: 8px; border-radius: 6px; white-space: pre-wrap; max-height: 200px; overflow: auto; margin: 6px 0; }
   .question { margin: 8px 0; }
   .question .q { font-weight: 600; }
@@ -75,6 +94,7 @@
 <header>
   <h1>Orchestrator</h1>
   <span id="connection">Connecting…</span>
+  <button class="primary" id="new-run">New run</button>
 </header>
 <main>
   <section id="runs"><div class="empty">No runs yet. Start one with --dashboard.</div></section>
@@ -120,7 +140,7 @@ function totalCost(run) {
 }
 
 function sortedRuns() {
-  const rank = { waiting: 0, running: 1, lost: 2, failed: 3, passed: 4 };
+  const rank = { waiting: 0, starting: 1, running: 1, lost: 2, failed: 3, passed: 4 };
   return [...runs.values()].map((r) => r.run)
     .sort((a, b) => (rank[a.status] - rank[b.status]) || (b.started - a.started));
 }
@@ -227,12 +247,51 @@ function replyForm(run, request) {
       h("button", { class: "danger", onclick: () => confirm("Stop this run?") && answer(run.id, request.id, { action: "stop" }) }, "Stop")));
 }
 
+function patchNode(text) {
+  return h("div", { class: "patch" }, text.split("\n").map((line) => {
+    const kind = line.startsWith("@@") ? "hunk"
+      : line.startsWith("+") && !line.startsWith("+++") ? "add"
+      : line.startsWith("-") && !line.startsWith("---") ? "del" : null;
+    return h("div", { class: kind }, line || " ");
+  }));
+}
+
+function reviewForm(run, request) {
+  const p = request.payload;
+  const added = p.files.reduce((n, f) => n + f.added, 0);
+  const removed = p.files.reduce((n, f) => n + f.removed, 0);
+  // Once the story branch has the target merged in, only that branch can be the target.
+  const branch = h("input", { type: "text", value: p.branch, readonly: p.branchLocked,
+    title: p.branchLocked ? "This run's branch holds this branch's history now, so it can only merge here." : null });
+  const message = h("input", { type: "text", value: p.message });
+  const changes = h("textarea", { rows: 2, placeholder: "What should change? The implement and review stages run again with this." });
+  return h("div", { class: "review" },
+    p.error ? h("div", { class: "error" }, p.error) : null,
+    p.note ? h("div", { class: "note" }, p.note) : null,
+    p.summary ? h("div", {}, p.summary) : null,
+    p.verdict ? h("div", { class: "meta" }, `Review stage verdict: ${p.verdict}`) : null,
+    p.findings && p.findings.length ? h("ul", {}, p.findings.map((f) => h("li", {}, f))) : null,
+    h("div", { class: "meta" }, `${p.files.length} files, +${added}/−${removed}. Worktree: ${p.worktree}`),
+    p.files.map((f) => h("details", {},
+      h("summary", {}, f.path, " ", h("span", { class: "add" }, `+${f.added}`), "/", h("span", { class: "del" }, `−${f.removed}`)),
+      f.patch ? patchNode(f.patch) : h("div", { class: "patch" }, "(not shown: past the size limit. Read it in the worktree.)"))),
+    p.truncated ? h("div", { class: "meta" }, "The diff is too large to show in full. Read the rest in the worktree.") : null,
+    h("div", { class: "fields" }, h("label", {}, "Branch"), branch, h("label", {}, "Commit message"), message),
+    h("div", { class: "actions" },
+      h("button", { class: "primary", onclick: () => answer(run.id, request.id, { action: "merge", branch: branch.value.trim(), message: message.value.trim() }) }, "Squash and merge"),
+      h("button", { class: "danger", onclick: () => confirm("Discard this run's changes? The worktree and its branch are deleted.") && answer(run.id, request.id, { action: "discard" }) }, "Discard")),
+    changes,
+    h("div", { class: "actions" },
+      h("button", { onclick: () => changes.value.trim() ? answer(run.id, request.id, { action: "changes", text: changes.value.trim() }) : alert("Say what should change first.") }, "Request changes")));
+}
+
 function renderPending(run) {
   const key = run.pending.map((p) => p.id).join(",");
   if (key === renderedPending) return;
   renderedPending = key;
-  const titles = { question: "The model asks", permission: "Permission needed", reply: "The model stopped" };
-  const forms = { question: questionForm, permission: permissionForm, reply: replyForm };
+  const titles = { question: "The model asks", permission: "Permission needed", reply: "The model stopped", review: "Review and merge" };
+  const forms = { question: questionForm, permission: permissionForm, reply: replyForm, review: reviewForm };
+  document.getElementById("pending").classList.toggle("has-review", run.pending.some((p) => p.kind === "review"));
   document.getElementById("pending").replaceChildren(...run.pending.map((p) =>
     h("div", { class: "request" }, h("h3", {}, `${titles[p.kind]}${p.stage ? ` · ${p.stage}` : ""}`), forms[p.kind](run, p))));
 }
@@ -273,8 +332,110 @@ function renderDetail() {
 function renderHead(run) {
   document.getElementById("head").replaceChildren(
     h("div", { class: "title" }, run.story, h("span", { class: `badge s-${run.status}` }, run.status)),
-    h("div", { class: "path" }, `${run.id} · ${run.harness} · ${run.workflow} · ${run.repo}`),
+    h("div", { class: "path" }, `${run.id} · ${run.harness} · ${run.workflow} · ${run.repo}` +
+      ` · permission mode: ${run.permissionMode ?? "per stage"}`),
+    run.launch ? h("div", { class: "path" }, `Started from the dashboard. Output: ${run.launch.log}`) : null,
     stageBar(run));
+}
+
+/** The form that starts a new run: pick a harness and a workflow, then fill in its inputs. */
+async function showLaunchForm() {
+  selected = null;
+  history.replaceState(null, "", "#new");
+  renderList();
+  const detail = document.getElementById("detail");
+  detail.replaceChildren(h("div", { class: "launch" }, "Loading workflows…"));
+  let workflows;
+  let modes = [];
+  try {
+    ({ workflows, modes = [] } = await (await fetch("/api/workflows")).json());
+  } catch (error) {
+    return detail.replaceChildren(h("div", { class: "launch errors" }, `Cannot read the workflows: ${error}`));
+  }
+  if (!workflows.length) return detail.replaceChildren(h("div", { class: "launch" }, "The hub found no workflow files."));
+
+  const harnesses = [...new Set(workflows.map((w) => w.harness))];
+  const labels = { ts: "TypeScript (harness-ts)", python: "Python (harness-python)" };
+  const harness = h("select", {}, harnesses.map((x) => h("option", { value: x }, labels[x] ?? x)));
+  const workflow = h("select", {});
+  const fields = h("div", {});
+  const mode = h("select", {});
+  const modeHelp = h("small", {});
+  const errors = h("div", { class: "errors" });
+  const start = h("button", { class: "primary" }, "Start");
+  let current;
+
+  const fieldFor = (input) => {
+    let control;
+    if (input.kind === "file" || input.kind === "choice") {
+      control = h("select", { name: input.name },
+        input.required && !input.default ? h("option", { value: "" }, "Choose…") : null,
+        (input.options ?? []).map((o) => h("option", { value: o, selected: o === input.default }, o)));
+    } else if (input.kind === "text") {
+      control = h("textarea", { name: input.name, rows: 3 }, input.default ?? "");
+    } else {
+      control = h("input", { type: "text", name: input.name, value: input.default ?? "" });
+    }
+    const empty = input.kind === "file" && !(input.options ?? []).length;
+    return h("div", { class: "field" },
+      h("label", {}, input.name, input.required ? " *" : ""),
+      input.description ? h("small", {}, input.description) : null,
+      control,
+      empty ? h("small", {}, "No files match. Add one to the folder, then open this form again.") : null);
+  };
+  const showWorkflow = () => {
+    current = workflows.find((w) => w.harness === harness.value && w.file === workflow.value);
+    errors.replaceChildren();
+    fields.replaceChildren(...(current ? current.inputs.map(fieldFor) : []));
+    if (current?.error) errors.replaceChildren(`This workflow cannot start: ${current.error}`);
+    start.disabled = !current || Boolean(current.error);
+    // The workflow's own modes are the first choice. A workflow that asks questions cannot use dontAsk.
+    const own = current?.permissionMode ? `the workflow's (${current.permissionMode})` : "each stage's own (default on the dashboard)";
+    mode.replaceChildren(h("option", { value: "" }, `Use ${own}`),
+      ...modes.filter((m) => !(current?.requiresDashboard && m.name === "dontAsk"))
+        .map((m) => h("option", { value: m.name }, m.name)));
+    showModeHelp();
+  };
+  const showModeHelp = () => {
+    modeHelp.textContent = modes.find((m) => m.name === mode.value)?.help ?? "The workflow file decides, stage by stage.";
+  };
+  mode.addEventListener("change", showModeHelp);
+  const showHarness = () => {
+    workflow.replaceChildren(...workflows.filter((w) => w.harness === harness.value)
+      .map((w) => h("option", { value: w.file }, `${w.name} (${w.file})`)));
+    showWorkflow();
+  };
+  harness.addEventListener("change", showHarness);
+  workflow.addEventListener("change", showWorkflow);
+
+  start.addEventListener("click", async () => {
+    const inputs = {};
+    for (const el of fields.querySelectorAll("[name]")) if (el.value.trim()) inputs[el.name] = el.value.trim();
+    if (mode.value === "bypassPermissions" &&
+        !confirm("bypassPermissions runs every tool without a permission check. Only the guardrail hook still blocks calls. Start anyway?")) return;
+    start.disabled = true;
+    errors.replaceChildren("Starting…");
+    const res = await fetch("/api/launch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ harness: harness.value, workflow: workflow.value, inputs, permissionMode: mode.value || undefined }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok && body.id) return select(body.id);
+    start.disabled = false;
+    errors.replaceChildren(...(body.errors ?? [body.error ?? `The hub refused: ${res.status}`]).map((e) => h("div", {}, e)));
+  });
+
+  detail.replaceChildren(h("div", { class: "launch" },
+    h("h2", {}, "Start a run"),
+    h("div", { class: "field" }, h("label", {}, "Harness"), harness),
+    h("div", { class: "field" }, h("label", {}, "Workflow"), workflow),
+    fields,
+    h("div", { class: "field" }, h("label", {}, "Permission mode"), modeHelp, mode),
+    errors,
+    h("div", { class: "actions" }, start),
+    h("p", { class: "meta" }, "The run uses the hub's environment, so the SDK credentials must be set where the hub runs.")));
+  showHarness();
 }
 
 function select(id) {
@@ -324,6 +485,13 @@ function connect() {
     if (message.type === "snapshot") {
       runs.clear();
       for (const r of message.runs) { runs.set(r.run.id, r); notifyWaiting(r.run); }
+      // Keep the launch form open across a reconnect.
+      if (location.hash === "#new") {
+        selected = null;
+        renderList();
+        if (!document.querySelector(".launch")) showLaunchForm();
+        return;
+      }
       if (!selected || !runs.has(selected)) selected = sortedRuns()[0]?.id ?? null;
       renderList();
       renderDetail();
@@ -332,6 +500,8 @@ function connect() {
     }
   };
 }
+
+document.getElementById("new-run").addEventListener("click", showLaunchForm);
 
 document.addEventListener("click", () => {
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();

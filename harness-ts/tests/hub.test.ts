@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { Hub, isLost, LOST_AFTER_MS, refuseReason, type LogEntry } from "../src/hub.ts";
+import { Hub, isLost, LOST_AFTER_MS, refuseReason, STARTING_LOST_AFTER_MS, type LogEntry } from "../src/hub.ts";
 import { HubClient, InputQueue, TurnTracker } from "../src/hubClient.ts";
 import type { RunInfo, RunInput } from "../src/hubTypes.ts";
 
@@ -64,6 +64,13 @@ test("a silent run with no inbox is lost, and reconnecting brings it back", () =
   assert.equal(run.status, "lost");
   hub.openInbox("r1", () => {});
   assert.equal(run.status, "running");
+});
+
+test("a launched run that has not connected yet gets longer before it is lost", () => {
+  const hub = new Hub();
+  const run = hub.launchRun(INFO, "/l.log", "r1", 0);
+  assert.equal(isLost(run, LOST_AFTER_MS + 1, false), false);
+  assert.equal(isLost(run, STARTING_LOST_AFTER_MS + 1, false), true);
 });
 
 test("finished runs are never lost", () => {
@@ -174,4 +181,12 @@ test("the hub refuses requests that a web page could forge", () => {
   // A form post from another site cannot set the JSON content type without a preflight.
   assert.notEqual(refuseReason({ host: "127.0.0.1:4321", "content-type": "text/plain" }, "POST", 4321), null);
   assert.equal(refuseReason({ host: "127.0.0.1:4321" }, "GET", 4321), null);
+});
+
+test("a stage that the workflow does not list is added before the merge stage", () => {
+  const hub = new Hub();
+  const run = hub.register({ ...INFO, stages: ["plan", "implement", "merge"] });
+  hub.apply(run.id, { type: "stage", stage: "resolve", status: "running", attempt: 1 });
+  assert.deepEqual(run.stages.map((s) => s.name), ["plan", "implement", "resolve", "merge"]);
+  assert.equal(run.stages[2].status, "running");
 });

@@ -47,7 +47,9 @@ class HubClient:
         try:
             async with session.post(f"{url}/api/runs", json=info) as res:
                 if res.status != 201:
-                    raise HubUnavailable(f"The hub refused the run: {res.status} {await res.text()}")
+                    text = await res.text()
+                    await session.close()
+                    raise HubUnavailable(f"The hub refused the run: {res.status} {text}")
                 run_id = (await res.json())["id"]
         except aiohttp.ClientError as error:
             await session.close()

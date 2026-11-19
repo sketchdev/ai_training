@@ -1,0 +1,64 @@
+name: interview-to-pr
+trigger: started from the dashboard
+
+# The first stage interviews the person to build the plan, so this workflow runs only with
+# the dashboard, and refuses the dontAsk permission mode, which denies questions.
+requires_dashboard: true
+
+inputs:
+  request:
+    kind: text
+    description: What you want done, in a sentence or two. The interview fills in the details.
+  repo:
+    kind: path
+    default: ../battleship
+    description: The repository to change
+
+# Paths the agent may never edit. The guardrail hook enforces this.
+protected_paths:
+  - pom.xml
+  - .github/
+  - .env
+
+limits:
+  # The interview turns count too.
+  max_turns: 60
+  max_budget_usd: 5
+
+stages:
+  - name: interview
+    description: Interview the person, then write the plan from their answers. Change nothing.
+    allowed_tools: [Read, Grep, Glob]
+    prompt: |
+      A person wants the change in the REQUEST below. Plan it with them.
+      1. Read the request and the parts of the repository it touches, so that you ask
+         only what the code does not already answer.
+      2. Interview the person with the AskUserQuestion tool. Ask about scope, behavior,
+         edge cases, errors, and tests. Ask up to 4 questions per round, and give 2 to 4
+         concrete options for each, with your recommendation first.
+      3. Stop when a developer could implement the plan without guessing, and after at
+         most 4 rounds.
+      Do not edit any file. Return the plan: a short imperative title (under 60
+      characters), the goal, each decision as "question: answer", the files to change,
+      the tests to add, and the risks.
+    check: plan records the person's decisions and lists files and tests
+
+  - name: implement
+    description: Make the change and its tests on a branch.
+    allowed_tools: [Read, Grep, Glob, Edit, Write, "Bash(mvn *)", "Bash(./mvnw *)", "Bash(git *)"]
+    prompt: |
+      Implement the plan from the interview stage. Follow each of the person's decisions.
+      Write the tests first. Run `./mvnw verify` until it passes.
+    check: ./mvnw verify passes
+
+  - name: review
+    # Each stage is its own query() call, so review always starts in a fresh session.
+    description: Review the diff in a fresh session.
+    allowed_tools: [Read, Grep, Glob, Skill, "Bash(git diff *)"]
+    prompt: |
+      Review the diff on this branch against docs/standards.md and against the person's
+      decisions from the interview stage. Report each violation, and each decision that
+      the change does not follow. Do not edit files.
+    check: verdict is approve or request_changes
+
+human: approves the squash merge in the dashboard

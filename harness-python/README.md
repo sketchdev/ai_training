@@ -52,6 +52,70 @@ If the hub is not running, a run with `--dashboard` stops before its first stage
 
 The hub listens on `127.0.0.1` only. Anyone who can open the page can allow tool calls.
 
+### Start a run from the dashboard
+
+Press New run in the dashboard. Pick the harness (TypeScript or Python) and the workflow, then fill in the form. The hub builds the form from the workflow's `inputs` section, and the run starts as its own process.
+
+- Credentials: the run uses the hub's environment, so set the SDK credentials in the terminal where you start the hub.
+- Python launches: the hub uses `harness-python/.venv/bin/python`, so the virtual environment must exist with the requirements installed.
+- Output: the run's output goes to `harness-ts/runs/hub/<run id>.log`. If the process ends before the run reports an end, the run shows as failed with the last lines of that log.
+- Hub restarts: a launched run keeps going if you stop the hub, and it reconnects when the hub starts again.
+
+### Workflow inputs
+
+A workflow file declares what it needs in an `inputs` section. Each input has a `kind`:
+
+- `file`: a file from the folder that `from` names, for example `stories/*.md`.
+- `path`: a folder.
+- `text`: free text.
+- `choice`: one of the values in `options`.
+
+An input with a `default` can be left out. Every workflow needs a `repo` input of kind `path`, which is the repository that the run changes. Relative paths resolve against the harness folder.
+
+The orchestrator adds each input to the stage prompts as a section, for example `STORY:` followed by the story file's text. A stage prompt can also use `{name}`, which becomes the input's value. From a terminal, pass each input as `--input name=value`.
+
+### Permission modes
+
+A permission mode decides what happens to a tool call that a stage's `allowed_tools` does not cover. Choose one for the whole run with `--permission-mode`, or with the Permission mode field in the launch form:
+
+- `default`: the call waits for a person on the dashboard. A headless run denies it.
+- `acceptEdits`: file edits run without asking. Other calls still wait for a person.
+- `auto`: a model classifier decides.
+- `dontAsk`: the call is denied, and the model cannot ask you questions.
+- `bypassPermissions`: every call runs without a permission check. The dashboard asks you to confirm this mode.
+
+A workflow file can set `permission_mode` for the whole workflow, or for one stage. The run's choice wins, then the stage's, then the workflow's. With none of them set, a headless run uses `dontAsk` and a dashboard run uses `default`. The guardrail hook blocks protected paths and blocked commands in every mode, including `bypassPermissions`. The `plan` mode is not offered, because nothing runs in it, so an implement stage could never pass.
+
+### The interview-to-pr workflow
+
+`workflows/interview-to-pr.yaml` starts from a short request instead of a story file. Its stages:
+
+1. `interview`: the model reads the code and asks you questions on the dashboard, in up to 4 rounds. Then it writes a plan with a title, your decisions, the files to change, and the tests to add.
+2. `implement`: the model makes the change and its tests, following your decisions.
+3. `review`: a fresh session reviews the diff against `docs/standards.md` and your decisions.
+
+Then the run opens the review and merge panel. The branch and commit message come from the plan's title.
+
+The workflow needs the dashboard (`requires_dashboard: true`), so start it from the dashboard or with `--dashboard`. It refuses `dontAsk`, because that mode denies questions.
+
+### Review and merge
+
+When every stage passes, a run with `--dashboard` does not end. It commits its changes on its story branch and shows a "Review and merge" panel with the diff, the review stage's verdict, and its findings. Pick one of three actions:
+
+1. Squash and merge. Name the target branch, which starts as a name made from the story, for example `feat/list-games`. Edit the commit message if you want. The run's changes land on that branch as one commit.
+2. Request changes. Write what should change. The implement and review stages run again in the same worktree, and the panel shows the new diff.
+3. Discard. The orchestrator deletes the worktree and the story branch.
+
+If the target branch does not exist, the orchestrator creates it at the commit the run started from. If the branch is checked out somewhere, for example in your main checkout, the merge happens there and the files update. The orchestrator refuses if that checkout has uncommitted changes to tracked files. Commit or stash them, then press Squash and merge again.
+
+If the merge conflicts, the orchestrator merges the target branch into the story branch, and a `resolve` stage lets the model fix the conflicts. The panel then shows the diff against the target branch for a second review.
+
+After a merge, the orchestrator removes the worktree and deletes the story branch. It does not push.
+
+The orchestrator uses the stage names `merge` and `resolve` itself. A workflow file that uses either name is refused at start.
+
+The orchestrator must still run while you review, because Request changes and `resolve` need the model. If a run is lost before you decide, its worktree stays at `runs/<run id>/repo`, and you merge it by hand. A diff over 400 KB is cut short in the page. The full diff is in the worktree.
+
 ## Lab steps (70 minutes)
 
 1. Run the starter on one story. Read the result: subtype, turns, cost, session ID.
